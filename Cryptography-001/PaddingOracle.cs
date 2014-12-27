@@ -1,58 +1,49 @@
-//Originally from Wayne C. Louie
+//Originally TCP connection from Wayne C. Louie, Magic is shown by Yiyang LI
 using System;
 using System.Net.Sockets;
+using System.Linq;
 
 namespace Program
 {
     class Program
     {
-        static readonly int BLOCKSIZE = 16;
+        const int BLOCKSIZE = 16;
+        const byte EXTRA_PADDING = 0;
+        const string cipherString = "9F0B13944841A832B2421B9EAF6D9836813EC9D944A5C8347A7CA69AA34D8DC0DF70E343C4000A2AE35874CE75E64C31";
+        static readonly byte[] ciphertext = Enumerable.Range(0, cipherString.Length / 2)
+                .Select(x => byte.Parse(cipherString.Substring(x * 2, 2), System.Globalization.NumberStyles.HexNumber))
+                .ToArray();
+
         static TcpClient client;
         static NetworkStream stream;
-        static bool Oracle_Connect()
+        static void connect()
         {
-            try
-            {
-                client = new TcpClient("54.165.60.84", 6667);
-                stream = client.GetStream();
-                Console.WriteLine("Connection opened successfully");
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Connection open failed with error [{0}]", e.Message);
-                return false;
-            }
-            return true;
+            client = new TcpClient("54.165.60.84", 6667);
+            stream = client.GetStream();
         }
-        static bool Oracle_Disconnect()
+        static void disconnect()
         {
-            try
-            {
-                stream.Close();
-                client.Close();
-                Console.WriteLine("Connection closed successfully.");
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Connection close failed with error [{0}]", e.Message);
-                return false;
-            }
-            return true;
+            client.Close();
+            stream.Close();
         }
+
         static bool Oracle_Send(byte[] ctext, int num_blocks)
         {
-            int packet_size= num_blocks*BLOCKSIZE + 2;
+            int packet_size = num_blocks * BLOCKSIZE + 2;
             byte[] buffy = new byte[packet_size];
             buffy[0] = (byte)num_blocks;
-            for (int i = 0; i < packet_size-2; i++) buffy[i + 1] = ctext[i];
-            buffy[packet_size - 1] = 0;
+            for (int i = 0; i < num_blocks * BLOCKSIZE; i++)
+                buffy[i + 1] = ctext[i];
+            buffy[buffy.Length - 1] = EXTRA_PADDING;
             try
             {
-                stream.Write(buffy, 0, num_blocks * BLOCKSIZE + 2);
+                stream.Write(buffy, 0, packet_size);
                 try
                 {
-                    int results= stream.ReadByte();
-                    return (results == 0x31); // ASCII 1 HEX 31 is success
+                    int results = stream.ReadByte();
+                    if (results == 0)
+                        results = stream.ReadByte();
+                    return (results == (int)'1'); // ASCII 1 HEX 31 is success
                 }
                 catch (Exception e)
                 {
@@ -65,36 +56,59 @@ namespace Program
             }
             return false;
         }
-        static byte[] data = 
-        {
-            0x9F, 0x0B, 0x13, 0x94, 0x48, 0x41, 0xA8, 0x32, 0xB2, 0x42, 0x1B, 0x9E, 0xAF, 0x6D, 0x98, 0x36,
-            0x81, 0x3E, 0xC9, 0xD9, 0x44, 0xA5, 0xC8, 0x34, 0x7A, 0x7C, 0xA6, 0x9A, 0xA3, 0x4D, 0x8D, 0xC0,
-            0xDF, 0x70, 0xE3, 0x43, 0xC4, 0x00, 0x0A, 0x2A, 0xE3, 0x58, 0x74, 0xCE, 0x75, 0xE6, 0x4C, 0x31
-        };
         static void Main(string[] args)
         {
-            if (!Oracle_Connect())
+            connect();
+            if (Oracle_Send(ciphertext, 3))
             {
-                Console.WriteLine("Connect failed.");
+                Console.WriteLine("Ciphertext decrypted successfully.");
             }
-            else
+            // Do your crypto magic work here.
+            int paddingSize = 0, msgLen = 0;
+            var cloneCipher = (byte[])ciphertext.Clone();
+            for (int k = 0; k < BLOCKSIZE; k++)
             {
-                // Do your crypto magic work here.
-                if (Oracle_Send(data, 3))
+                cloneCipher[16 + k] = 0;
+                if (!Oracle_Send(cloneCipher, 3))
                 {
-                    Console.WriteLine("Ciphertext decrypted successfully.");
-                }
-                else
-                {
-                    Console.WriteLine("Ciphertext failed to decrypt.");
-                }
-                if (!Oracle_Disconnect())
-                {
-                    Console.WriteLine("Disconnect failed.");
+                    Console.WriteLine("Ciphertext failed to decrypt. We got the message length. ");
+                    msgLen = k;
+                    break;
                 }
             }
-            Console.WriteLine("Press ENTER to exit.");
+            char[] cleartext = Enumerable.Range(0, ciphertext.Length - 1).Select(i => i > msgLen ? ' ' : '?').ToArray();
+            cloneCipher = (byte[])ciphertext.Clone();
+            
+            for (int block = 0; block < 2; block++)
+            {
+                cloneCipher = (byte[])ciphertext.Clone();
+                for (paddingSize = BLOCKSIZE - msgLen + 1; paddingSize <= BLOCKSIZE; paddingSize++)
+                {
+                    int indexOffset = block == 0 ? 16 : 0;
+                    int numBlock = block == 0 ? 3 : 2;
+                    int index = BLOCKSIZE - paddingSize + indexOffset;
+                    for (int i = BLOCKSIZE - 1; i > BLOCKSIZE - paddingSize; i--)
+                    {
+                        cloneCipher[i + indexOffset] = (byte)((cloneCipher[i + indexOffset] ^ paddingSize ^ (paddingSize - 1)));
+                    }
+                    for (byte i = 0; i < 0xFF; i++)
+                    {
+                        cloneCipher[index] = (byte)i;
+                        if (Oracle_Send(cloneCipher, numBlock))
+                        {
+                            char c = (char)(ciphertext[index] ^ cloneCipher[index] ^ paddingSize);
+                            Console.WriteLine(c);
+                            cleartext[index] = c;
+                            break;
+                        }
+                    }
+                }
+                msgLen = BLOCKSIZE;
+            }
+            disconnect();
+            Console.WriteLine("Press any key to exit.");
             Console.ReadLine();
         }
+        
     }
 }
