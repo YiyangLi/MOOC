@@ -1,130 +1,107 @@
-//Originally from Angelo Cresta
+//Originally from Angelo Cresta, Magic shown by Yiyang LI
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Net.Sockets;
- 
-namespace PaddingOracle.Oracles
+using System.Linq;
+
+namespace Cryptography
 {
-	public class Toolkit
-	{
-		public static byte[] Xor(byte[] A1, byte[] A2, int lenght)
-        {
-            byte[] result = new byte[lenght];
- 
- 
-            for (int i = 0; i < lenght; i++)
-            {
-                result[i] = (byte)(A1[i] ^ A2[i]);
-            }
- 
-            return result;
-        }
-	}
-    public class OnlineCBC_MAC 
+    class Program
     {
- 
-        public static byte[] Mac(byte[] message, int mlength)
+        const string ATTACK_MSG = "I, the server, hereby agree that I will pay $100 to this student";
+        const byte EXTRA_PADDING = 0;
+        static TcpClient MAC_Client;
+        static TcpClient VRFY_Clinet;
+        static NetworkStream MAC_Stream;
+        static NetworkStream VRFY_Stream;
+        static void connect()
         {
- 
-            List<byte> RequestOracleMac = new List();
- 
-            for (int i = 0; i < message.Count(); i++)
-            {
-                RequestOracleMac.Add(message[i]);
-            }
- 
-            //insert mlength at Index 0 before sending to the server
-            RequestOracleMac.Insert(0, (byte)mlength);
- 
-            //insert null terminator
-            RequestOracleMac.Insert(RequestOracleMac.Count, (byte)'\0');
- 
-            byte[] Tag = GetBytes(OnlineCBC_MAC.Connect("54.165.60.84", 6668, RequestOracleMac.ToArray()));
- 
-            return Tag;
- 
+            MAC_Client = new TcpClient("54.165.60.84", 6668);
+            MAC_Stream = MAC_Client.GetStream();
+            VRFY_Clinet = new TcpClient("54.165.60.84", 6669);
+            VRFY_Stream = VRFY_Clinet.GetStream();
         }
-        public static int Verify(byte[] message, int mlength, byte[] tag)
+
+        static void disconnect()
         {
- 
-            List RequestOracleVerify = new List();
- 
-            for (int i = 0; i < message.Count(); i++)
-            {
-                RequestOracleVerify.Add(message[i]);
-            }
- 
-            //insert mlength at Index 0 before sending to the server
-            RequestOracleVerify.Insert(0, (byte)mlength);
- 
-            //insert tag 
-            for (int i = 0; i < tag.Count(); i++)
-            {
-                RequestOracleVerify.Insert(RequestOracleVerify.Count, tag[i]);
-            }
- 
-            //insert null terminator
-            RequestOracleVerify.Insert(RequestOracleVerify.Count, (byte)'\0');
- 
-            int result =0;
-            int.TryParse(OnlineCBC_MAC.Connect("54.165.60.84", 6669, RequestOracleVerify.ToArray()), out result);
- 
-            return result;
- 
+            MAC_Stream.Close();
+            MAC_Client.Close();
+            VRFY_Stream.Close();
+            VRFY_Clinet.Close();
         }
- 
-        public static byte[] GetBytes(string str)
+        static byte[] GetBytes(string str)
         {
             return System.Text.Encoding.UTF8.GetBytes(str);
         }
- 
         public static string GetString(byte[] bytes)
         {
             return System.Text.Encoding.UTF8.GetString(bytes);
         }
- 
- 
-        public static String Connect(String server, Int32 port, Byte[] data) //, String message)
+        static byte[] Mac(byte[] message, int mlength)
         {
- 
-            string output = "";
+            int packet_size = mlength + 2;
+            byte[] buffy = new byte[packet_size];
+            buffy[0] = (byte)mlength;
+            for (int i = 0; i < mlength; i++)
+                buffy[i + 1] = message[i];
+            buffy[buffy.Length - 1] = EXTRA_PADDING;
             try
             {
-                TcpClient client = new TcpClient(server, port);
- 
-                NetworkStream stream = client.GetStream();
- 
-                stream.Write(data, 0, data.Length);
- 
-                data = new Byte[256];
- 
-                // String to store the response ASCII representation.
-                String responseData = String.Empty;
- 
-                // Read the first batch of the TcpServer response bytes.
-                Int32 bytes = stream.Read(data, 0, data.Length);
-                responseData = System.Text.Encoding.ASCII.GetString(data, 0, bytes);
- 
-                //Console.WriteLine("Received: {0}", responseData);
-                output = responseData;
- 
-                // Close everything.
-                stream.Close();
-                client.Close();
+                MAC_Stream.Write(buffy, 0, packet_size);
+                byte[] data = new byte[16];
+                int results = MAC_Stream.Read(data, 0, 16);
+                return data;
             }
-            catch (ArgumentNullException e)
+            catch (Exception e)
             {
-                Console.WriteLine("ArgumentNullException: {0}", e);
+                Console.WriteLine("Stream read failed with error [{0}]", e.Message);
+                return null;
             }
-            catch (SocketException e)
+        }
+        static bool Verify(byte[] message, int mlength, byte[] tag)
+        {
+            int packet_size = message.Length + tag.Length + 2;
+            byte[] buffy = new byte[packet_size];
+            buffy[0] = (byte)mlength;
+            for (int i = 0; i < message.Length; i++)
             {
-                Console.WriteLine("SocketException: {0}", e);
+                buffy[i + 1] = message[i];
             }
- 
-            return output;
+            for (int i = 0; i < tag.Length; i++)
+            {
+                buffy[i + message.Length + 1] = tag[i];
+            }
+            buffy[buffy.Length - 1] = EXTRA_PADDING;
+            try
+            {
+                VRFY_Stream.Write(buffy, 0, packet_size);
+                int results = VRFY_Stream.ReadByte();
+                return results == (int)'1';
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Stream read failed with error [{0}]", e.Message);
+                return false;
+            }
+        }
+        static void Main(string[] args)
+        {
+            connect();
+            byte[] firstHalf = GetBytes(ATTACK_MSG.Substring(0, ATTACK_MSG.Length / 2));
+            byte[] secondHalf = GetBytes(ATTACK_MSG.Substring(ATTACK_MSG.Length / 2));
+            byte[] tag = Mac(firstHalf, firstHalf.Length);
+            for (int i = 0; i < tag.Length; i++)
+            {
+                secondHalf[i] = (byte)(secondHalf[i] ^ tag[i]);
+            }
+            tag = Mac(secondHalf, secondHalf.Length);
+            bool verify = Verify(GetBytes(ATTACK_MSG), ATTACK_MSG.Length, tag);
+            //Bingo!
+            disconnect();
+            string answer = string.Concat(tag.Take(4).Select(i => i.ToString("X2")).ToArray());
+            Console.WriteLine(answer);
+            Console.WriteLine("Press any key to exit.");
+            Console.ReadLine();
         }
     }
 }
