@@ -13,3 +13,5 @@ Given by [Prof. Hicks](http://www.cs.umd.edu/~mwh/) at UMD College Park, the cou
 Given by [Prof. Hwu](http://www.ece.illinois.edu/directory/profile/w-hwu) at UIUC (I am also an Illini :J ), the course teaches you the theory in GPU computing, and how to leverage other devices to accomplish a more powerful computation.
 [Original Problem Set](https://github.com/ashwin/coursera-heterogeneous)
 
+## [Algorithms: Design and Analysis, Part 1](https://class.coursera.org/algo-007/)
+Given by [Prof. Roughgarden] (http://theory.stanford.edu/~tim/) at Stanford, serveral fundamental principles of algorithm design: divide-and-conquer methods, graph algorithms, practical data structures (heaps, hash tables, search trees), randomized algorithms, and more. 
