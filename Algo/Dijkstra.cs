@@ -15,19 +15,15 @@ namespace MOOC
             public Edge Next { get; set; }
 
         }
-        private static readonly int[] default_vertexes_for_shortest_path_length = new int[] { 7, 37, 59, 82, 99, 115, 133, 165, 188, 197 };
+        private static readonly int[] Questions = new int[] { 7, 37, 59, 82, 99, 115, 133, 165, 188, 197 };
         public const string PATH = @"..\..\algo\PA5.in";
         public const int MAX_VERTEX = 200;
         public const int LARGE_INT = 1000000;
         static void dijkstra(List<Edge> graph, out int[] distance)
         {
-            var visited = new bool[MAX_VERTEX + 1];
             var unexplored = new HashSet<int>(Enumerable.Range(2, MAX_VERTEX - 1));
             distance = new int[MAX_VERTEX + 1];
-            visited = Enumerable.Repeat(false, MAX_VERTEX).ToArray();
             distance = Enumerable.Repeat(LARGE_INT, MAX_VERTEX + 1).ToArray();
-            visited[0] = true;
-            visited[1] = true;
             distance[1] = 0;
             while (unexplored.Count > 0)
             {
@@ -99,7 +95,7 @@ namespace MOOC
             Console.WriteLine("Reading data is done. ");
             var path = new Edge();
             dijkstra(graph, out distance);
-            foreach (var vertex in default_vertexes_for_shortest_path_length)
+            foreach (var vertex in Questions)
             {
                 Console.WriteLine("{0}\t{1}", vertex, distance[vertex]);
             }
